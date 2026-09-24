@@ -45,6 +45,26 @@ test('parses a known smart-home state function', () => {
   }])
 })
 
+test('parses a command before unrelated trailing speech', () => {
+  const result = parseText(
+    'Выключи свет. Я даже это уже ни разу не видел это новый интерфейс.',
+    functions,
+    { timeZone: 'UTC' }
+  )
+  assert.deepEqual(result.functionCalls, [{
+    arguments: { state: 0 },
+    name: 'set_main_lights_state'
+  }])
+})
+
+test('parses open actions from normalized function names', () => {
+  const result = parseText('открой дверь', functions, { timeZone: 'UTC' })
+  assert.deepEqual(result.functionCalls, [{
+    arguments: {},
+    name: 'open_door'
+  }])
+})
+
 test('does not invent unknown functions', () => {
   const result = parseText('включи кухню', functions, { timeZone: 'UTC' })
   assert.equal(result.kind, 'unknown')

@@ -63,26 +63,55 @@ export function parseText (text: string, functions: FunctionCatalog, options: Pa
     }
   }
 
-  const homeCall = parseHomeControl(normalized, functions)
+  const homeCall = parseHomeControl(text, functions)
   if (homeCall) return homeCall
 
   return response('unknown', 'unknown', 0, '')
 }
 
 function parseHomeControl (text: string, functions: FunctionCatalog): NlpParseResponse | null {
-  const action = findAction(text)
+  const command = extractCommand(text)
+  const action = findAction(command)
   if (!action) return null
 
   const candidates = Object.entries(functions).filter(([name, entry]) => {
-    const searchable = normalize(`${name} ${entry.description}`)
-    return matchesDevice(text, searchable) && matchesAction(action, name, searchable, entry)
+    const searchable = normalize(`${name.replaceAll('_', ' ')} ${entry.description}`)
+    return matchesDevice(command, searchable) && matchesAction(action, name, searchable, entry)
   })
 
-  if (candidates.length !== 1) return null
-  const [name, entry] = candidates[0]
+  const selected = selectCandidate(command, candidates)
+  if (!selected) return null
+  const [name, entry] = selected
   const args = buildArguments(action, entry)
   if (args === null) return null
   return callResponse(name, 'smart_home.control', functions, args)
+}
+
+function extractCommand (text: string): string {
+  const lowered = text.toLocaleLowerCase('ru-RU')
+  const action = ON_WORDS.concat(OFF_WORDS).find(word => lowered.includes(word))
+  if (!action) return normalize(text)
+
+  const start = lowered.indexOf(action)
+  const remainder = lowered.slice(start)
+  const boundary = remainder.search(/[.!?;\n—–-]/u)
+  return normalize(boundary === -1 ? remainder : remainder.slice(0, boundary))
+}
+
+function selectCandidate (
+  text: string,
+  candidates: Array<[string, FunctionCatalog[string]]>
+): [string, FunctionCatalog[string]] | null {
+  if (candidates.length === 1) return candidates[0]
+  if (!candidates.length) return null
+
+  const genericLightCommand = /(?:свет|ламп(?:а|ы)?|light|lights)/u.test(text)
+  if (!genericLightCommand) return null
+
+  const mainCandidates = candidates.filter(([name, entry]) =>
+    /(?:^|[_ ])main(?:[_ ]|$)/u.test(normalize(`${name} ${entry.description}`))
+  )
+  return mainCandidates.length === 1 ? mainCandidates[0] : null
 }
 
 function findAction (text: string): 'on' | 'off' | null {
@@ -95,7 +124,9 @@ function matchesDevice (text: string, searchable: string): boolean {
   const terms = text.split(/\s+/u).filter(term => term.length > 2 &&
     !ON_WORDS.includes(term) && !OFF_WORDS.includes(term) &&
     !['главные', 'главный', 'лампы', 'лампа', 'свет', 'lights', 'light'].includes(term))
-  if (terms.length === 0) return true
+  if (terms.length === 0) {
+    return /(?:light|lights|ламп|свет|main)/u.test(searchable)
+  }
   const aliases: Record<string, string[]> = {
     дверь: ['door'],
     дверцу: ['door'],
@@ -118,7 +149,9 @@ function matchesAction (action: 'on' | 'off', name: string, searchable: string,
       return action === 'on' ? value === '1' || description === 'on' : value === '0' || description === 'off'
     })
   }
-  return action === 'on' ? /\bopen\b|\bon\b|откро/u.test(searchable) : /\boff\b|\bclose\b|выключ|закро/u.test(searchable)
+  const open = /(?:^|\s)(?:open|opens|откро|включ)/u.test(searchable)
+  const close = /(?:^|\s)(?:off|close|closes|выключ|закро)/u.test(searchable)
+  return action === 'on' ? open : close
 }
 
 function buildArguments (action: 'on' | 'off', entry: FunctionCatalog[string]): Record<string, number | string> | null {
