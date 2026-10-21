@@ -1,16 +1,23 @@
 # nlp-service
 
-Deterministic natural-language parser for common Razvalisa assistant requests.
+Детерминированный parser запросов ассистента. MQTT не использует.
 
-## Endpoints
+## Docker Compose
 
-- `GET /health` returns `{ "status": "ok" }`.
-- `POST /parse` accepts `{ "text": string, "functions": object }` and returns a direct response, known function calls, or `unknown` for LLM fallback.
+```bash
+docker compose build nlp-service
+docker compose up -d nlp-service
+curl http://localhost:8090/health
+curl -X POST http://localhost:8090/parse -H 'content-type: application/json' -d '{"text":"включи свет","functions":{}}'
+```
 
-The service never connects to MQTT. The processor supplies the currently available function catalog and continues through the LLM when parsing is uncertain.
+Standalone: `docker build -t nlp-service . && docker run --rm -p 8090:8090 -e PORT=8090 nlp-service`.
 
-## Environment
+## Переменные и API
 
 - `PORT` (default `8090`)
 - `TIMEZONE` (default `Europe/Moscow`)
-# nlp-service
+- `GET /health` -> `{ "status": "ok" }`
+- `POST /parse` принимает `{ "text": string, "functions": object }`; лимит JSON body — 64 KiB.
+
+Проверка перед деплоем: `pnpm test && pnpm typecheck`.
